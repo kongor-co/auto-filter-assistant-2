@@ -1,0 +1,5 @@
+{
+  "extensionName": { "message": "AutoFilter" },
+  "apply": { "message": "Apply preferences" },
+  "unsupported": { "message": "This shop or page is not supported." }
+}

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "AutoFilter",
+  "version": "2.0.0",
+  "description": "Apply your saved shopping preferences instantly on supported stores.",
+  "default_locale": "en",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://*.zalando.de/*"],
+  "background": { "service_worker": "dist/background.js" },
+  "action": {
+    "default_popup": "dist/popup.html",
+    "default_title": "AutoFilter"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.zalando.de/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

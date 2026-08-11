@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Node",
+    "jsx": "react-jsx", "strict": true, "esModuleInterop": true,
+    "skipLibCheck": true, "lib": ["DOM", "DOM.Iterable", "ES2022"], "types": ["chrome"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}
