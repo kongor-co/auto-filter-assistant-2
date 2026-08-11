@@ -1,21 +1,25 @@
-import { loadState, saveState } from '../domain/storage';
+import { importState, loadState, saveState } from '../domain/storage';
 import type { ExtensionMessage } from './messages';
 
-chrome.runtime.onInstalled.addListener(async () => { const state = await loadState(); await saveState(state); });
-chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, respond) => {
-  (async () => {
-    if (message.type === 'GET_CONTEXT') {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      let host = ''; try { host = tab?.url ? new URL(tab.url).hostname : ''; } catch {}
-      respond({ state: await loadState(), tab: tab ? { id: tab.id, url: tab.url, host } : null }); return;
-    }
-    if (message.type === 'APPLY_NOW') {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id) throw new Error('No active tab');
-      respond(await chrome.tabs.sendMessage(tab.id, { type: 'APPLY_NOW' } satisfies ExtensionMessage)); return;
-    }
-    if (message.type === 'STATE_UPDATED') { await saveState(message.state); respond({ ok: true }); return; }
-    if (message.type === 'EXECUTION_COMPLETE') { const state = await loadState(); state.lastResult = message.result; await saveState(state); respond({ ok: true }); }
-  })().catch(error => respond({ ok: false, error: error.message }));
-  return true;
-});
+function contentFile():string{const background=chrome.runtime.getManifest().background as {service_worker?:string}|undefined;return background?.service_worker?.startsWith('dist/')?'dist/content.js':'content.js'}
+async function inject(tabId:number){await chrome.scripting.executeScript({target:{tabId},files:[contentFile()]})}
+async function activeTab(){const[tab]=await chrome.tabs.query({active:true,currentWindow:true});if(!tab?.id)throw new Error('No active tab.');return tab}
+function scriptId(shopId:string){return`autofilter-auto-${shopId.replace(/[^a-z0-9_-]/gi,'-')}`}
+async function configureAutomatic(shopId:string,enabled:boolean,matches:string[]){const id=scriptId(shopId);await chrome.scripting.unregisterContentScripts({ids:[id]}).catch(()=>{});if(enabled)await chrome.scripting.registerContentScripts([{id,matches,js:[contentFile()],runAt:'document_idle',persistAcrossSessions:true}])}
+async function restoreAutomatic(){const state=await loadState();for(const[shopId,settings]of Object.entries(state.shops)){if(!settings.automatic)continue;const mapping=state.personalMappings.find(item=>item.shopId===shopId);const domains=mapping?.domains|| (shopId==='zalando'?['zalando.de']:[]);if(!domains.length)continue;const matches=domains.flatMap(domain=>[`https://${domain}/*`,`https://*.${domain}/*`]);const allowed=await chrome.permissions.contains({origins:matches});if(allowed)await configureAutomatic(shopId,true,matches)}}
+chrome.runtime.onInstalled.addListener(()=>{void loadState();void restoreAutomatic()});
+chrome.runtime.onStartup.addListener(()=>{void restoreAutomatic()});
+
+chrome.runtime.onMessage.addListener((message:ExtensionMessage,_sender,respond)=>{(async()=>{
+  if(message.type==='GET_CONTEXT'){const tab=await activeTab().catch(()=>null);let host='';let origin='';try{const url=tab?.url?new URL(tab.url):null;host=url?.hostname||'';origin=url?.origin||''}catch{}respond({state:await loadState(),tab:tab?{id:tab.id,url:tab.url,host,origin,title:tab.title}:null});return}
+  if(message.type==='APPLY_NOW'){const tab=await activeTab();await inject(tab.id!);respond(await chrome.tabs.sendMessage(tab.id!,{type:'APPLY_NOW'} satisfies ExtensionMessage));return}
+  if(message.type==='START_PICKER'){const tab=await activeTab();if(!tab.url||!/^https?:/.test(tab.url))throw new Error('Open a normal website before starting the mapper.');await inject(tab.id!);respond(await chrome.tabs.sendMessage(tab.id!,{type:'START_PICKER_IN_PAGE'} satisfies ExtensionMessage));return}
+  if(message.type==='PICKER_SELECTED'){const state=await loadState();state.pendingPicker=message.result;await saveState(state);respond({ok:true});return}
+  if(message.type==='PICKER_CANCELLED'||message.type==='CLEAR_PICKER'){const state=await loadState();state.pendingPicker=null;await saveState(state);respond({ok:true});return}
+  if(message.type==='TEST_CONTROL'){const tab=await activeTab();await inject(tab.id!);respond(await chrome.tabs.sendMessage(tab.id!,message));return}
+  if(message.type==='STATE_UPDATED'){await saveState(message.state);respond({ok:true});return}
+  if(message.type==='EXECUTION_COMPLETE'){const state=await loadState();state.lastResult=message.result;for(const id of message.result.mappingIds){const mapping=state.personalMappings.find(item=>item.id===id);if(mapping){const failed=message.result.results.some(item=>item.outcome==='FAILED');mapping.consecutiveFailures=failed?(mapping.consecutiveFailures||0)+1:0;mapping.health=failed?(mapping.consecutiveFailures>=3?'BROKEN':'DEGRADED'):'HEALTHY';mapping.lastTestedAt=new Date().toISOString()}}await saveState(state);respond({ok:true});return}
+  if(message.type==='SET_AUTOMATIC'){await configureAutomatic(message.shopId,message.enabled,message.origins);const state=await loadState();state.shops[message.shopId]??={enabled:true,automatic:false,sortEnabled:true};state.shops[message.shopId].automatic=message.enabled;state.shops[message.shopId].permissionRequired=false;await saveState(state);respond({ok:true});return}
+  if(message.type==='IMPORT_STATE'){respond({ok:true,state:await importState(message.raw)});return}
+})().catch(error=>respond({ok:false,error:error instanceof Error?error.message:String(error)}));return true});
+chrome.permissions.onRemoved.addListener(removed=>{void(async()=>{if(!removed.origins?.length)return;const state=await loadState();for(const[shopId,settings]of Object.entries(state.shops)){if(!settings.automatic)continue;const mapping=state.personalMappings.find(item=>item.shopId===shopId);const domains=mapping?.domains||(shopId==='zalando'?['zalando.de']:[]);const patterns=domains.flatMap(domain=>[`https://${domain}/*`,`https://*.${domain}/*`]);if(!removed.origins.some(origin=>origin==='<all_urls>'||patterns.includes(origin)))continue;settings.automatic=false;settings.permissionRequired=true;await configureAutomatic(shopId,false,[]);state.personalMappings.filter(item=>item.shopId===shopId).forEach(item=>{item.health='PERMISSION_REQUIRED'})}await saveState(state)})()});
