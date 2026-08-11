@@ -1,4 +1,8 @@
-export const COLOR_OPTIONS = ['Black','White','Grey','Blue','Navy','Brown','Beige','Red','Green','Yellow','Orange','Purple','Pink'];
-export const BRAND_OPTIONS = ['adidas','Nike','Puma','New Balance','Converse','Vans','ASICS','Tommy Hilfiger','Calvin Klein','HUGO','Lacoste','Levi’s'];
-export const MATERIAL_OPTIONS = ['Leather','Textile','Synthetic','Suede','Canvas','Mesh','Cotton','Wool'];
-export const CLOTHING_SIZES = ['XXS','XS','S','M','L','XL','XXL','3XL'];
+import type { AttributeType } from './types';
+export const ATTRIBUTE_TYPES:{value:AttributeType;label:string;description:string}[]=[
+  {value:'text',label:'Text',description:'One free-text value'},
+  {value:'number',label:'Number',description:'One numeric value'},
+  {value:'singleSelect',label:'Single select',description:'One choice from your own options'},
+  {value:'multiSelect',label:'Multi select',description:'Several values entered by you'},
+  {value:'boolean',label:'Yes / no',description:'An enabled or disabled preference'}
+];

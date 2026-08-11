@@ -1,6 +1,6 @@
 {
   "name": "autofilter",
-  "version": "2.0.0",
+  "version": "3.0.1",
   "private": true,
   "description": "Instant deterministic shopping filters for supported stores",
   "scripts": {
